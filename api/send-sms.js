@@ -55,6 +55,10 @@ export default async function handler(req, res) {
     form.append('msg_type', msg_type || 'LMS');
     if (testmode_yn) form.append('testmode_yn', testmode_yn);
 
+    /* ⚠ 진단용 — 이 발송이 실제로 어느 IP로 나갔는지 (알리고 IP 등록 대조용). 원인 확정되면 제거 */
+    const myIp = await fetch('https://api.ipify.org').then(r => r.text()).catch(() => '확인실패');
+    console.error('발신 IP:', myIp);
+
     const aligoRes = await fetch('https://apis.aligo.in/send/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
