@@ -272,7 +272,7 @@ document.dispatchEvent(new Event('fbready'));
 <script>
 // ── 앱 버전 자동 갱신 ──
 // 새 버전 배포 시: 아래 APP_VERSION 숫자를 +1, version.json의 version도 같은 숫자로 올림
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 (function checkAppVersion(){
   try{
     fetch('version.json?t=' + Date.now(), {cache:'no-store'})
@@ -2248,8 +2248,290 @@ function onAuthCompany(u){
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   로드잡 도우미 챗 '로디' — 내장 도움말 봇(비용 0) + 문의 창구
+     · 문답표 HELP_QA 는 index.html·admin.html 의 실제 화면·버튼을 근거로 씀.
+       ⚠ 사용자 기능을 추가·변경하면 이 표도 함께 고친다 (CLAUDE.md 9절 규칙)
+     · 키워드 매칭: 1건→답 / 2건 이상→선택지 / 0건→문의 유도.
+       나중에 Claude API 로 바꿀 땐 helperAnswer() 한 함수만 갈면 된다.
+     · 로드잡은 업종 개념이 없어 코스로드의 T()·«토큰» 치환 없이 평문으로 쓴다.
+     · 문의는 Firestore 컬렉션 rj_inquiries (코스로드 inquiries 와 분리)
+   ═══════════════════════════════════════════════════════════════ */
+var HELP_QA = [
+/* ── 기사 ── */
+{role:'driver', keys:['가입','회원가입','기사등록','시작하기'], t:'기사 가입하기',
+ a:'1. 첫 화면에서 「기사」를 고르세요\n2. 휴대폰 번호 → 문자로 온 인증번호 6자리\n3. 약관 동의 (개인정보·면허번호는 필수, 프로필 공개·위치정보는 선택)\n4. 이름과 활동 희망 지역 (여러 곳 추가할 수 있어요)\n5. 운전면허 종류와 보유 차량 (여러 대 선택 가능)\n6. 경력·희망 근무형태·자기소개\n7. 면허증 사진 제출 — 「나중에 인증할래요」로 건너뛰어도 가입은 됩니다'},
+{role:'driver', keys:['인증번호','문자가안','안와','안옴','재전송','인증실패'], t:'인증번호가 안 올 때',
+ a:'1. 번호를 숫자만, - 없이 넣으셨는지 봐주세요 (예: 01012345678)\n2. 문자 수신 차단·스팸함을 확인해 주세요\n3. 그래도 안 오면 뒤로 갔다가 다시 「인증번호 받기」를 눌러주세요\n※ 파일을 직접 열어 보는 시안 모드에서는 진짜 인증이 되지 않습니다. roadjob.co.kr 로 접속해 주세요.'},
+{role:'driver', keys:['면허','면허증','배지','검수','인증배지'], t:'면허 인증 (✅ 배지)',
+ a:'1. 가입 마지막 단계 또는 내정보에서 면허증 사진을 올립니다\n2. 관리자가 확인하면 이름 옆에 ✅ 인증 배지가 붙어요\n3. 인증된 기사는 업체가 훨씬 믿고 연락합니다\n🔒 면허증 사진은 진위 확인 용도로만 쓰고 확인 즉시 파기합니다. 사본을 보관하지 않아요.\n※ 이미 제출하셨다면 「제출됨(검수중/인증됨)」으로 표시되고, 바꾸실 때만 새 사진을 올리면 됩니다.'},
+{role:'driver', keys:['프로필수정','정보수정','내정보','바꾸고싶'], t:'프로필 수정',
+ a:'1. 아래 「내정보」 탭 → 「프로필 수정」\n2. 지역·면허·차량·경력·희망 근무형태를 다시 고르면 됩니다\n3. 이미 면허증을 제출하셨으면 다시 올리실 필요 없어요'},
+{role:'driver', keys:['공개','제안받','찾아오','나를찾'], t:'업체에 내 프로필 공개',
+ a:'1. 「내정보」 → 「업체에 내 프로필 공개」를 켜세요\n2. 켜면 업체가 나를 찾아 채용 제안을 먼저 보낼 수 있어요\n3. 꺼두어도 공고에 직접 지원하는 것은 그대로 가능합니다'},
+{role:'driver', keys:['지원','구직','일자리','공고에'], t:'공고에 지원하기',
+ a:'1. 아래 「기사구직」 탭에서 공고를 누르세요\n2. 내용을 보고 「지원하기」를 누르면 업체에 문자로 알림이 갑니다\n3. 지원한 내역은 「진행중」 탭에서 볼 수 있어요\n※ 마감됐거나 기간이 지난 공고에는 지원할 수 없습니다.'},
+{role:'driver', keys:['필터','직종','근무형태','골라'], t:'공고를 골라 보기 (필터)',
+ a:'1. 「기사구직」 탭 오른쪽 위 「필터」\n2. 직종과 근무형태를 골라 「적용하기」\n3. 「초기화」를 누르면 전체 공고가 다시 보입니다'},
+{role:'driver', keys:['제안','수락','거절'], t:'채용 제안을 받았을 때',
+ a:'1. 업체가 먼저 제안하면 「진행중」 탭 맨 위에 주황 카드로 뜹니다\n2. 「수락하기」를 누르면 업체에 내 연락처가 전달되고 문자가 갑니다\n3. 「거절」을 누르면 업체에 거절로 표시됩니다'},
+{role:'driver', keys:['지원현황','상태','열람','연락중','채용확정','미선정'], t:'지원 상태 보는 법',
+ a:'「진행중」 탭의 배지가 지금 상태예요.\n· 지원함 — 업체가 아직 열어보지 않음\n· 열람됨 — 업체가 내 프로필을 봄\n· 연락중 — 업체가 연락을 준비 중\n· 채용확정 — 채용이 확정됨\n· 미선정 — 이번에는 함께하지 못하게 됨\n· 수락함/거절함 — 받은 제안에 내가 답한 것'},
+{role:'driver', keys:['퀵','일감','수락하기'], t:'퀵 일감 받는 순서',
+ a:'1. 홈 또는 「퀵수락」 탭에서 대기 중인 일감을 봅니다\n2. 먼저 수락하는 기사님이 배정됩니다\n3. 「이 일감 수락하기」 → 「📦 픽업 완료」 → 「✅ 배송 완료」 순서로 누르세요\n4. 배송 중에 「🚚 곧 도착 + 문자」를 누르면 고객에게 문자가 갑니다 (1회)\n💳 요금은 고객에게 직접 받으세요 (현금·계좌이체·간편송금).'},
+{role:'driver', keys:['보험','유상운송','안전모','헬멧','오토바이'], t:'오토바이 기사 필수 확인 (보험·안전모)',
+ a:'2026년 6월부터 유상운송보험 가입이 법으로 의무화되었습니다.\n일반 종합보험으로는 배달 중 사고가 보장되지 않아요.\n1. 「내정보」 → 「프로필 수정」 → 면허·차량 단계\n2. 「유상운송보험 가입」과 「안전모 보유」 두 가지를 체크하세요\n3. 두 개를 체크해야 퀵 일감을 받을 수 있어요 (채용 공고 지원은 체크 없이도 됩니다)'},
+{role:'driver', keys:['수입','정산','얼마','벌었'], t:'수입 확인',
+ a:'· 홈 위쪽에 「오늘 수입」과 「오늘 완료」 건수가 나옵니다\n· 「내정보」에는 이번 달 수입과 전체 누적이 나와요\n· 배송 완료로 체크한 건만 집계됩니다\n※ 요금은 고객에게 직접 받으신 금액 기준이에요. 로드잡이 대신 정산하지 않습니다.'},
+{role:'driver', keys:['알림음','소리','진동','알림'], t:'새 일감 알림음',
+ a:'1. 홈의 「🔔 알림음 켜기」를 한 번 눌러주세요\n2. 브라우저는 한 번 눌러야 소리를 낼 수 있어서 처음 한 번은 꼭 필요해요\n3. 새 퀵 주문이 들어오면 소리와 진동으로 알려드립니다\n4. 끄시려면 같은 자리의 「알림음 끄기」'},
+/* '안받'은 쓰지 않는다 — '제안받'에 먹혀 채용 제안 질문에 이 답이 딸려 나왔다 */
+{role:'driver', keys:['일감받는중','쉬는','일감안받','켜고끄'], t:'일감 받기 켜고 끄기',
+ a:'1. 홈 맨 위 「일감 받는 중」 스위치를 누르면 꺼집니다\n2. 꺼두면 새 일감 알림을 받지 않아요 — 쉬실 때 사용하세요\n3. 다시 누르면 켜집니다'},
+{role:'driver', keys:['위치','내위치','가까운','gps'], t:'위치정보 이용',
+ a:'1. 「내정보」 → 「📍 위치정보 이용」을 켜세요\n2. 브라우저가 물어보면 「허용」을 눌러주세요\n3. 켜면 가까운 일감이 먼저 보이고, 카드에 거리(km)가 표시됩니다\n🔒 위치는 저장하지 않습니다. 끄면 등록순으로 보여요.'},
+{role:'driver', keys:['길찾기','내비','네비','지도'], t:'길찾기',
+ a:'수행 중인 퀵 카드의 「🗺 길찾기」를 누르면 지도 앱으로 연결됩니다.\n고객에게 바로 전화하려면 같은 카드의 「📞 고객에게 전화」를 누르세요.'},
+/* ── 업체 ── */
+{role:'company', keys:['업체가입','사업자','업체등록','상호'], t:'업체 가입하기',
+ a:'1. 첫 화면에서 「업체」를 고르세요\n2. 휴대폰 번호 → 문자로 온 인증번호 6자리\n3. 약관 동의\n4. 상호·담당자·업종·지역을 넣으면 끝입니다'},
+{role:'company', keys:['퀵보내','퀵발송','보내는','접수'], t:'퀵 보내는 법',
+ a:'1. 「퀵발송」 탭에서 출발지와 도착지를 검색합니다\n2. 거리에 따라 요금이 자동으로 계산됩니다\n3. 보낼 물건에 맞는 차량을 고르고, 무엇을 보내는지 적으세요\n4. 「퀵 보내기」를 누르면 가까운 기사님이 수락합니다\n5. 수락되면 기사님 연락처를 문자로 받습니다\n💳 요금은 기사님께 직접 결제해 주세요.\n※ 현금·귀중품·위험물은 접수할 수 없습니다.'},
+{role:'company', keys:['요금','거리계산','기본요금','km'], t:'퀵 요금은 어떻게 정해지나요',
+ a:'차량별 기본요금 + 기본 거리를 넘는 만큼 km당 추가로 계산됩니다.\n· 자전거 5,000원 (3km 포함) · 이후 km당 800원 · 7km 이내\n· 오토바이 7,000원 (5km 포함) · 이후 km당 900원 · 40km 이내\n· 승용차 8,000원 (5km 포함) · 이후 km당 1,000원 · 80km 이내\n심야·주말에는 할증이 붙고, 보내기 전에 예상 요금이 화면에 그대로 나옵니다.'},
+{role:'company', keys:['내위치','출발지','위치정보','주소검색'], t:'출발지를 빨리 넣는 법',
+ a:'1. 「내정보」에서 위치정보 이용을 켜주세요\n2. 「퀵발송」 탭의 「📍 내 위치로 설정」을 누르면 출발지가 바로 채워집니다\n3. 주소는 건물명이나 도로명으로 검색하시면 됩니다\n4. 동·호수는 주소 아래 「상세주소」 칸에 적어주세요'},
+{role:'company', keys:['공고등록','공고','구인','모집'], t:'채용 공고 등록',
+ a:'1. 「기사구인」 탭 → 「+ 공고 등록하기」\n2. 제목·직종·지역·근무형태는 꼭 넣어야 합니다\n3. 요일과 시간은 버튼으로 고르면 돼요 — 타이핑하지 않아도 됩니다\n4. 마감일은 정하거나 「상시 모집」으로 둘 수 있어요\n5. 지원자가 오면 문자로 알려드립니다'},
+{role:'company', keys:['마감','다시모집','공고삭제','공고수정'], t:'공고 마감·수정·삭제',
+ a:'「기사구인」 탭의 공고 카드에서 바로 하실 수 있어요.\n· 수정 — 내용을 고칩니다 (모집중일 때만)\n· 마감하기 — 더 이상 지원을 받지 않습니다\n· 다시 모집 — 마감한 공고를 다시 엽니다\n· 삭제 — 공고를 지웁니다 (되돌릴 수 없어 확인을 한 번 더 여쭤봅니다)'},
+{role:'company', keys:['지원자','열람','연락중','채용확정','미선정'], t:'지원자 관리',
+ a:'1. 공고 카드의 「지원자 N명」 또는 「진행중」 탭에서 지원자를 봅니다\n2. 지원자를 누르면 프로필과 연락처가 열립니다\n3. 상태를 열람함 → 연락중 → 채용확정 또는 미선정으로 바꾸면 기사님께 문자가 갑니다\n✅ 인증 배지가 붙은 기사는 면허증 확인을 마친 분이에요.'},
+{role:'company', keys:['기사찾기','먼저제안','제안하기'], t:'기사에게 먼저 제안하기',
+ a:'1. 「기사구인」 탭 → 「🔎 기사 찾기」\n2. 프로필 공개에 동의한 기사님만 보입니다\n3. 기사님을 누르고 모집중인 공고를 고르면 채용 제안이 갑니다\n4. 기사님이 수락하면 연락처가 전달되고 문자로 알려드립니다'},
+{role:'company', keys:['주문취소','취소'], t:'퀵 주문 취소',
+ a:'「진행중」 탭에서 해당 주문의 「취소」를 누르세요.\n이미 기사님이 수락한 뒤라면 취소 사실이 고객·기사님께 문자로 안내됩니다.'},
+/* ── 공통 ── */
+{role:'all', keys:['설치','홈화면','아이콘','바탕화면'], t:'폰 홈 화면에 추가 (설치)',
+ a:'앱스토어에서 내려받지 않아도 됩니다. roadjob.co.kr 주소가 그대로 앱이에요.\n· 안드로이드(크롬): ⋮ 메뉴 → 홈 화면에 추가\n· 아이폰(사파리): 아래 공유 버튼(⬆️) → 홈 화면에 추가\n추가하면 일반 앱처럼 아이콘이 생기고, 업데이트는 자동입니다.'},
+{role:'all', keys:['로그아웃','역할','업체로','기사로','바꾸'], t:'로그아웃 · 기사↔업체 바꾸기',
+ a:'· 로그아웃: 아래 「내정보」 칸 밑의 「로그아웃」\n· 역할 바꾸기: 로그아웃하면 첫 화면(기사/업체 선택)으로 돌아갑니다\n· 가입 화면 위쪽 🏠 를 눌러도 첫 화면으로 갈 수 있어요'},
+/* '안전'은 키워드로 쓰지 않는다 — 기사 문답의 '안전모'에 먹혀 엉뚱한 답이 나갔다 */
+{role:'all', keys:['개인정보','파기','보관','보안','탈퇴'], t:'개인정보 · 회원 탈퇴',
+ a:'· 면허증 사진은 진위 확인 용도로만 쓰고 확인 즉시 파기합니다\n· 위치는 저장하지 않습니다\n· 탈퇴는 「내정보」 맨 아래 「회원 탈퇴」\n· 탈퇴하면 프로필과 지원 내역이 모두 지워지고 되돌릴 수 없어, 확인을 두 번 여쭤봅니다'},
+{role:'all', keys:['글씨','작게','화면이상','새로고침','오류'], t:'화면이 이상할 때',
+ a:'· 글씨가 너무 작으면: 크롬 ⋮ → 「데스크톱 사이트」 체크를 해제하고 새로고침\n· 화면이 옛날 그대로면: 새로고침 한 번이면 최신으로 바뀝니다\n· 그래도 이상하면 아래 「✉ 문의 보내기」로 알려주세요'},
+{role:'all', keys:['테스트','시험','연습'], t:'테스트 버전',
+ a:'주소 뒤에 ?org=roadjob_test 를 붙이면 테스트 버전으로 열립니다.\n테스트 버전의 자료는 실사용과 완전히 나뉘어 있어 마음껏 눌러보셔도 됩니다.\n화면 맨 위에 「🧪 테스트 모드」 띠가 뜨면 테스트 버전이에요.'}
+];
+
+/* 도우미 캐릭터 '로디' — 떠 있는 버튼·챗 제목·봇 말풍선에 공용으로 쓰는 인라인 SVG.
+   색은 로고에서: 바탕 남색(--navy #0F2A47) + 포인트 주황(--orange #EA580C) */
+function rjFaceSvg(size){
+  return '<svg viewBox="0 0 64 64" width="'+size+'" height="'+size+'" xmlns="http://www.w3.org/2000/svg" style="display:block;">'
+    +'<circle cx="32" cy="34" r="26" fill="#0F2A47"/>'
+    +'<circle cx="32" cy="34" r="21" fill="#E8EEF5"/>'
+    +'<line x1="32" y1="4" x2="32" y2="10" stroke="#0F2A47" stroke-width="3" stroke-linecap="round"/>'
+    +'<circle cx="32" cy="4" r="3" fill="#EA580C"/>'
+    +'<circle cx="24" cy="31" r="3.5" fill="#0F2A47"/>'
+    +'<circle cx="40" cy="31" r="3.5" fill="#0F2A47"/>'
+    +'<circle cx="25.2" cy="29.8" r="1.2" fill="#fff"/>'
+    +'<circle cx="41.2" cy="29.8" r="1.2" fill="#fff"/>'
+    +'<path d="M24 41 Q32 48 40 41" stroke="#EA580C" stroke-width="3" fill="none" stroke-linecap="round"/>'
+    +'<circle cx="18" cy="37" r="2.5" fill="#FDBA74"/>'
+    +'<circle cx="46" cy="37" r="2.5" fill="#FDBA74"/>'
+    +'</svg>';
+}
+function helperRole(){ return (ROLE === 'company') ? 'company' : 'driver'; }
+function helperNorm(s){ return String(s||'').toLowerCase().replace(/\s+/g,''); }
+function helperAnswer(text){
+  var q = helperNorm(text);
+  var role = helperRole();
+  var all = HELP_QA.map(function(item, i){ return {item:item, i:i}; });
+  var match = function(x){ return x.item.keys.some(function(k){ return q.indexOf(helperNorm(k))>=0; }); };
+  var hits = all.filter(function(x){
+    if(x.item.role!=='all' && x.item.role!==role) return false;
+    return match(x);
+  });
+  /* 내 역할 문답에 없으면 반대쪽도 한 번 더 (업체가 기사 쪽을 물을 수 있음) */
+  if(hits.length===0) hits = all.filter(match);
+  if(hits.length===1) return {type:'answer', hit:hits[0]};
+  if(hits.length>=2) return {type:'choices', hits:hits.slice(0,4)};
+  return {type:'none'};
+}
+/* 안내 라벨은 이 기기에서 챗을 한 번 열면 다시 안 나옴 */
+var HELPER_SEEN_KEY = 'rj_helper_seen';
+function ensureHelperBtn(){
+  if(document.getElementById('helper-fab')) return;
+  var wrap = document.createElement('div');
+  wrap.id = 'helper-fab-wrap';
+  /* 앱은 가운데 520px 칸이라 넓은 화면에서도 칸 안쪽에 붙도록 max() 사용.
+     하단 탭바(.foot)와 안 겹치게 bottom:120px */
+  /* z-index 90 = 앱 모달(.modal 100)보다 아래 — 필터·약관·공고 창을 가리지 않는다.
+     하단 탭바(.foot 30)보다는 위 */
+  wrap.style.cssText = 'position:fixed;right:max(16px, calc(50% - 244px));bottom:120px;z-index:90;'
+    + 'display:flex;flex-direction:column;align-items:center;gap:5px;';
+  var b = document.createElement('button');
+  b.id = 'helper-fab';
+  b.setAttribute('aria-label','도우미 로디에게 물어보기');
+  b.innerHTML = rjFaceSvg(38);
+  b.style.cssText = 'width:56px;height:56px;border-radius:50%;background:#fff;border:1px solid #C9D6E5;padding:0;'
+    + 'display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(15,42,71,.35);cursor:pointer;';
+  b.onclick = openHelperChat;
+  wrap.appendChild(b);
+  var seen = ''; try{ seen = localStorage.getItem(HELPER_SEEN_KEY)||''; }catch(e){}
+  if(!seen){
+    var lb = document.createElement('div');
+    lb.id = 'helper-fab-label';
+    lb.textContent = '챗봇에게 물어보세요';
+    lb.style.cssText = 'background:#fff;color:#0F2A47;font-size:11px;font-weight:700;padding:4px 9px;border-radius:12px;'
+      + 'box-shadow:0 3px 10px rgba(0,0,0,.18);white-space:nowrap;pointer-events:none;';
+    wrap.appendChild(lb);
+  }
+  document.body.appendChild(wrap);
+}
+function hideHelperLabel(){
+  try{ localStorage.setItem(HELPER_SEEN_KEY,'1'); }catch(e){}
+  var lb = document.getElementById('helper-fab-label');
+  if(lb) lb.remove();
+}
+function helperPush(who, html){
+  var box = document.getElementById('helper-msgs');
+  if(!box) return;
+  box.insertAdjacentHTML('beforeend',
+    who==='me'
+      ? '<div style="text-align:right;margin:6px 0;"><span style="display:inline-block;background:var(--navy);color:#fff;padding:8px 12px;border-radius:14px 14px 2px 14px;font-size:13px;max-width:85%;text-align:left;">'+html+'</span></div>'
+      : '<div style="display:flex;align-items:flex-start;gap:6px;margin:6px 0;"><span style="flex-shrink:0;margin-top:2px;">'+rjFaceSvg(22)+'</span>'
+        +'<span style="display:inline-block;background:#F2F4F7;color:var(--ink);padding:8px 12px;border-radius:14px 14px 14px 2px;font-size:13px;max-width:90%;white-space:pre-line;">'+html+'</span></div>');
+  box.scrollTop = box.scrollHeight;
+}
+function helperInqBtnHtml(){
+  return '<div style="margin:4px 0 8px;"><button onclick="helperShowInquiry()" style="padding:7px 12px;background:var(--orange-soft);color:var(--orange);border:1px solid #FED7AA;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">✉ 문의 보내기</button></div>';
+}
+/* 칩 목록. 문답표 항목은 번호(i)로 바로 펼친다 — 제목을 다시 키워드 매칭에 태우면
+   제목 안의 낱말이 다른 항목에도 걸려 선택지가 무한히 되풀이될 수 있다. */
+function helperChipHtml(list){
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px;">'
+    + list.map(function(c){
+        var act = (c.i==null) ? 'helperAsk(\''+c.t+'\')' : 'helperPick('+c.i+')';
+        return '<button onclick="'+act+'" style="padding:7px 11px;background:var(--navy-soft);color:var(--navy);border:1px solid #C9D6E5;border-radius:14px;font-size:12px;font-weight:700;cursor:pointer;">'+c.t+'</button>';
+      }).join('')
+    + '</div>';
+}
+function openHelperChat(){
+  hideHelperLabel();
+  var old = document.getElementById('helper-modal');
+  if(old){ old.remove(); return; }      /* 다시 누르면 닫기 */
+  var samples = (helperRole()==='company')
+    ? ['퀵 보내는 법','채용 공고 등록','지원자 관리','기사 찾기']
+    : ['퀵 일감 받는 순서','면허 인증','공고에 지원','수입 확인'];
+  document.body.insertAdjacentHTML('beforeend',
+     /* z-index 150 = 앱 모달(100) 위, 토스트(200) 아래 */
+     '<div id="helper-modal" style="position:fixed;right:12px;bottom:12px;left:12px;max-width:400px;margin-left:auto;margin-right:auto;z-index:150;'
+    +'background:#fff;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:72vh;overflow:hidden;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--navy);color:#fff;">'
+    +'<span style="display:flex;align-items:center;gap:7px;font-size:14px;font-weight:800;">'
+    +'<span style="background:#fff;border-radius:50%;padding:2px;display:flex;">'+rjFaceSvg(22)+'</span>로드잡 도우미 로디</span>'
+    +'<button onclick="document.getElementById(\'helper-modal\').remove()" aria-label="닫기" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;font-weight:700;">✕</button></div>'
+    +'<div id="helper-msgs" style="flex:1;overflow-y:auto;padding:10px 12px;min-height:180px;"></div>'
+    +'<div style="display:flex;gap:6px;padding:10px 12px;border-top:1px solid var(--line);">'
+    +'<input id="helper-input" type="text" placeholder="무엇이든 물어보세요" onkeydown="if(event.key===\'Enter\')helperSend();" style="flex:1;padding:10px;border:1.5px solid var(--line);border-radius:10px;font-size:13px;min-width:0;"/>'
+    +'<button onclick="helperSend()" style="padding:10px 14px;background:var(--navy);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;">전송</button></div>'
+    +'</div>');
+  helperPush('bot','안녕하세요! 로드잡 도우미 로디예요.\n무엇이든 물어보세요 😊 아래를 눌러도 돼요 👇');
+  var box = document.getElementById('helper-msgs');
+  if(box) box.insertAdjacentHTML('beforeend', helperChipHtml(samples.map(function(s){ return {t:s, i:null}; })));
+}
+function helperSend(){
+  var el = document.getElementById('helper-input');
+  if(!el || !el.value.trim()) return;
+  var t = el.value.trim(); el.value = '';
+  helperAsk(t);
+}
+/* 선택지·목록에서 항목 번호로 바로 답하기 */
+function helperPick(i){
+  var item = HELP_QA[i];
+  if(!item) return;
+  helperPush('me', esc(item.t));
+  helperPush('bot','【'+item.t+'】\n'+item.a);
+  var box = document.getElementById('helper-msgs');
+  if(box) box.insertAdjacentHTML('beforeend', helperInqBtnHtml());
+}
+function helperAsk(text){
+  helperPush('me', esc(text));
+  var r = helperAnswer(text);
+  var box;
+  if(r.type==='answer'){
+    helperPush('bot','【'+r.hit.item.t+'】\n'+r.hit.item.a);
+    box = document.getElementById('helper-msgs');
+    if(box) box.insertAdjacentHTML('beforeend', helperInqBtnHtml());
+  } else if(r.type==='choices'){
+    helperPush('bot','어떤 내용이 궁금하세요? 골라주세요 👇');
+    box = document.getElementById('helper-msgs');
+    if(box) box.insertAdjacentHTML('beforeend', helperChipHtml(r.hits.map(function(x){ return {t:x.item.t, i:x.i}; })));
+  } else {
+    helperPush('bot','그 내용은 준비된 도움말에 없네요.\n문의를 남겨주시면 확인하고 직접 답해드릴게요!');
+    box = document.getElementById('helper-msgs');
+    if(box) box.insertAdjacentHTML('beforeend', helperInqBtnHtml());
+  }
+}
+function helperShowInquiry(){
+  var box = document.getElementById('helper-msgs');
+  if(!box || document.getElementById('inq-text')) return;
+  var contact = (helperRole()==='company') ? (C.phone||'') : (D.phone||'');
+  box.insertAdjacentHTML('beforeend',
+     '<div id="inq-form" style="border:1px solid var(--line);border-radius:10px;padding:10px;margin:6px 0;background:#F9FAFB;">'
+    +'<div style="font-size:12px;font-weight:800;color:var(--ink);margin-bottom:6px;">✉ 문의 보내기</div>'
+    +'<select id="inq-type" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:6px;">'
+    +'<option value="사용법">사용법 질문</option><option value="개선">개선 요청</option><option value="오류">오류 신고</option></select>'
+    +'<textarea id="inq-text" rows="3" maxlength="500" placeholder="내용을 적어주세요" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:6px;resize:none;"></textarea>'
+    +'<input id="inq-contact" type="tel" value="'+esc(contact)+'" placeholder="회신 받을 연락처" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:6px;"/>'
+    +'<button onclick="sendInquiry()" style="width:100%;padding:9px;background:var(--orange);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">보내기</button></div>');
+  box.scrollTop = box.scrollHeight;
+}
+function sendInquiry(){
+  var type = (document.getElementById('inq-type')||{}).value || '사용법';
+  var text = ((document.getElementById('inq-text')||{}).value || '').trim();
+  var contact = ((document.getElementById('inq-contact')||{}).value || '').trim();
+  if(!text){ toast('내용을 입력해 주세요.'); return; }
+  /* 기기당 하루 5건 제한 — 오발송·요금폭탄 방지 */
+  var limKey = 'rj_inquiry_cnt_' + new Date().toISOString().slice(0,10);
+  var cnt = 0; try{ cnt = parseInt(localStorage.getItem(limKey)||'0', 10) || 0; }catch(e){}
+  if(cnt >= 5){ toast('문의는 하루 5건까지 보낼 수 있어요. 내일 다시 시도해 주세요.'); return; }
+
+  var role = helperRole();
+  var rec = { role:role, roleText:(role==='company'?'업체':'기사'),
+              name:(role==='company' ? (C.company||'') : (D.name||'')),
+              type:type, text:text, contact:contact,
+              test:RJ_TEST, date:new Date().toISOString(), status:'new' };
+  try{
+    if(window._db && window._fb){
+      var id = 'iq' + Date.now() + Math.floor(Math.random()*1000);
+      /* 저장이 막히면(Firestore 규칙에 rj_inquiries 쓰기 허용이 없을 때) 원문을 남긴다 —
+         문자는 따로 나가므로 문의 자체는 전달되지만, 목록에 안 쌓이는 이유를 알 수 있어야 한다 */
+      var p = window._fb.setDoc(window._fb.doc(window._db, 'rj_inquiries', id), rec);
+      if(p && p.catch) p.catch(function(e){ console.error('문의 저장 실패 (rj_inquiries):', e); });
+    }
+  }catch(e){ console.error('문의 저장 실패 (rj_inquiries):', e); }
+  /* 문자 알림 — 테스트 버전은 보내지 않는다 (실사용 문의만 알림) */
+  if(!RJ_TEST){
+    try{
+      fetch('https://roadjob.vercel.app/api/send-sms', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ receiver:'010-3660-3911',
+          msg:'[로드잡 문의] ('+rec.roleText+(rec.name?'/'+rec.name:'')+') '+type+' — '+text.slice(0,40)
+              +(contact?'\n회신: '+contact:'') })
+      }).catch(function(){});
+    }catch(e){}
+  }
+  try{ localStorage.setItem(limKey, String(cnt+1)); }catch(e){}
+  var f = document.getElementById('inq-form'); if(f) f.remove();
+  helperPush('bot','✅ 문의가 접수됐어요!\n' + (contact ? '확인 후 '+contact+' 으로 연락드릴게요.' : '확인 후 연락드릴게요.'));
+}
+
 function boot(){
   icoDefs();
+  ensureHelperBtn();   /* 도우미 '로디' 버튼 + 안내 라벨 — 모든 화면·기사/업체 공통 */
   if(RJ_TEST){ var tb=document.getElementById('testbar');
     if(tb) tb.innerHTML='<div class="testbar">🧪 테스트 모드 — 데이터가 실사용과 분리됩니다 ('+RJ_ORG+')</div>'; }
   /* 업체로 '가입까지 마친' 사람만 업체 화면으로. 그냥 눌러본 사람은 첫 화면 유지 */
@@ -3536,6 +3818,7 @@ function C_startRealtime(){
 /* 그라데이션 정의를 문서에 한 번만 심는다 (아이콘들이 참조) */
 function C_boot(){
   icoDefs();
+  ensureHelperBtn();   /* 업체로 바로 들어온 경로에서도 도우미 버튼이 있어야 한다 (중복 호출은 무시됨) */
   if(RJ_TEST){ var tb=document.getElementById('testbar');
     if(tb) tb.innerHTML='<div class="testbar">🧪 테스트 모드 — 데이터가 실사용과 분리됩니다 ('+RJ_ORG+')</div>'; }
   ROLE = 'company';
