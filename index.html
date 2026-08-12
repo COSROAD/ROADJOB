@@ -270,6 +270,26 @@ window._fbLoaded = true;
 document.dispatchEvent(new Event('fbready'));
 </script>
 <script>
+// ── 앱 버전 자동 갱신 ──
+// 새 버전 배포 시: 아래 APP_VERSION 숫자를 +1, version.json의 version도 같은 숫자로 올림
+const APP_VERSION = 1;
+(function checkAppVersion(){
+  try{
+    fetch('version.json?t=' + Date.now(), {cache:'no-store'})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(v){
+        if(v && typeof v.version==='number' && v.version > APP_VERSION){
+          var flag = 'roadjob_reloaded_v' + v.version;
+          if(!sessionStorage.getItem(flag)){
+            sessionStorage.setItem(flag, '1');
+            location.reload(true);
+          }
+        }
+      })
+      .catch(function(){});
+  }catch(e){}
+})();
+
 var SIDO = {
  '서울':['종로구','중구','용산구','성동구','광진구','동대문구','중랑구','성북구','강북구','도봉구','노원구','은평구','서대문구','마포구','양천구','강서구','구로구','금천구','영등포구','동작구','관악구','서초구','강남구','송파구','강동구'],
  '부산':['중구','서구','동구','영도구','부산진구','동래구','남구','북구','강서구','해운대구','사하구','금정구','연제구','수영구','사상구','기장군'],
