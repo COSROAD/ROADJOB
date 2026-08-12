@@ -81,12 +81,19 @@
 
 ## 6. 서버 API
 
-현재 서버 API는 **코스로드 Vercel 프로젝트**에 얹혀 있다.
+서버 API는 `api/rc-quick.js`·`rc-notify.js` — **이 저장소에 있으며 전용 Vercel로 배포 예정.**
+단 `index.html`의 호출은 **아직 `cosroad.vercel.app`(코스로드 Vercel)을 향한다** — Vercel 이사 3단계에서 상대경로(`/api/…`)로 전환하면 이 문장도 갱신할 것.
 
-- `https://cosroad.vercel.app/api/rc-quick` — 퀵/일감 관련
-- `https://cosroad.vercel.app/api/rc-notify` — 알림(문자) 발송
+- `api/rc-quick.js` — 티맵: 주소 검색 · 거리 계산 · 경로 최적화 · 역지오코딩
+- `api/rc-notify.js` — 알리고 SMS: 채용 알림(applications) · 퀵 주문 알림(orders)
+- 현재 `index.html`이 부르는 주소 4곳: `https://cosroad.vercel.app/api/rc-quick` ×3, `.../api/rc-notify` ×1
 
-이 저장소에는 서버 코드가 없다. 로드잡 전용 Vercel로 이사할 때 함께 옮길 예정이며, 그때 위 URL을 일괄 변경한다. **API 변경은 절대규칙 6에 따라 push 전 확인 대상이다.**
+배포 설정: `vercel.json` — 서울 리전 `icn1`, `maxDuration` 15초 (코스로드와 동일).
+`package.json`은 **일부러 두지 않는다** — 코스로드도 없이 ESM(`export default`) `.js`가 Vercel 자동 인식으로 돌고 있어, 조건을 똑같이 맞춘 것이다.
+
+필요한 Vercel 환경변수(값은 콘솔에만): `RC_TMAP_KEY`(또는 `TMAP_KEY`) / `ALIGO_KEY` · `ALIGO_USER_ID` · `ALIGO_SENDER` / `RC_SA_EMAIL` · `RC_SA_KEY`
+
+**API 변경은 절대규칙 6에 따라 push 전 확인 대상이다.**
 
 ---
 
