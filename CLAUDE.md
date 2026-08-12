@@ -81,12 +81,13 @@
 
 ## 6. 서버 API
 
-서버 API는 `api/rc-quick.js`·`rc-notify.js` — **이 저장소에 있으며 전용 Vercel로 배포 예정.**
-단 `index.html`의 호출은 **아직 `cosroad.vercel.app`(코스로드 Vercel)을 향한다** — Vercel 이사 3단계에서 상대경로(`/api/…`)로 전환하면 이 문장도 갱신할 것.
+서버 API는 **이 저장소의 `api/`** → **로드잡 전용 Vercel(`roadjob.vercel.app`)로 배포됨. 코스로드 의존 없음.**
 
 - `api/rc-quick.js` — 티맵: 주소 검색 · 거리 계산 · 경로 최적화 · 역지오코딩
 - `api/rc-notify.js` — 알리고 SMS: 채용 알림(applications) · 퀵 주문 알림(orders)
-- 현재 `index.html`이 부르는 주소 4곳: `https://cosroad.vercel.app/api/rc-quick` ×3, `.../api/rc-notify` ×1
+- `index.html`이 부르는 주소 4곳: `https://roadjob.vercel.app/api/rc-quick` ×3, `.../api/rc-notify` ×1
+
+**상대경로(`/api/…`)가 아니라 절대주소를 쓰는 이유**: `roadjob.co.kr` 은 아직 **GitHub Pages**가 서빙한다(Pages에는 `/api`가 없고 POST는 405). 절대주소라 Pages에서 서빙되는 지금도, 도메인을 Vercel로 옮긴 뒤에도 똑같이 동작한다. 도메인 이사 후 상대경로로 바꾸고 싶으면 그때 별도로 정한다.
 
 배포 설정: `vercel.json` — 서울 리전 `icn1`, `maxDuration` 15초 (코스로드와 동일).
 `package.json`은 **일부러 두지 않는다** — 코스로드도 없이 ESM(`export default`) `.js`가 Vercel 자동 인식으로 돌고 있어, 조건을 똑같이 맞춘 것이다.
