@@ -55,10 +55,6 @@ export default async function handler(req, res) {
     form.append('msg_type', msg_type || 'LMS');
     if (testmode_yn) form.append('testmode_yn', testmode_yn);
 
-    /* ⚠ 진단용 — 이 발송이 실제로 어느 IP로 나갔는지 (알리고 IP 등록 대조용). 원인 확정되면 제거 */
-    const myIp = await fetch('https://api.ipify.org').then(r => r.text()).catch(() => '확인실패');
-    console.error('발신 IP:', myIp);
-
     const aligoRes = await fetch('https://apis.aligo.in/send/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
@@ -66,8 +62,6 @@ export default async function handler(req, res) {
     });
 
     const data = await aligoRes.json();
-    /* ⚠ 진단용 — 알리고가 뭐라고 거절하는지 원문 확보 (원칙 C). 원인 확정되면 이 줄 제거 */
-    console.error('ALIGO 응답:', JSON.stringify(data));
     return res.status(200).json(data);
   } catch (e) {
     return res.status(500).json({ result_code: -1, message: '서버 오류: ' + (e && e.message ? e.message : String(e)) });
