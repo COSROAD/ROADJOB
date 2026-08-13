@@ -135,9 +135,11 @@ document.dispatchEvent(new Event('fbready'));
 /* ═══════════ ROADJOB 관리자 ═══════════ */
 var phone='', code='', busy=false, confirmResult=null, recaptcha=null;
 var view='login';          // login | code | noauth | main
-var tab='license';         // license | stats
+var tab='license';         // license | stats | inq
 var pending=[], stats={drivers:0,companies:0,jobs:0,apps:0};
 var myUid='';
+/* 문의함 — 도우미 챗 '로디'의 문의가 쌓이는 rj_inquiries 컬렉션 */
+var inquiries=[], inqFilter='all', inqError='';
 
 function live(){ return window._live===true; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"'`]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c];}); }
@@ -183,6 +185,7 @@ noauth:function(){ return ''
   +'<b>등록 방법</b><br>Firebase 콘솔 → Firestore → <b>컬렉션 시작</b> → 컬렉션 ID <b>admins</b> → 문서 ID에 위 UID 붙여넣기 → 아무 필드나 하나(예: role="admin") 넣고 저장</div>'; },
 
 main:function(){
+  if(tab==='inq'){ return inqView(); }
   if(tab==='stats'){
     return '<div class="card" style="margin-top:0;">'
       + row('등록 기사', stats.drivers+'명') + row('등록 업체', stats.companies+'개')
@@ -219,12 +222,18 @@ login:function(){ return '<button class="btn btn-main" id="nx" onclick="sendCode
 code: function(){ var e=document.getElementById('f-code'); return '<button class="btn btn-main" id="nx" onclick="verifyCode()" '+((e&&e.value.length===6)?'':'disabled')+'>확인</button>'; },
 noauth:function(){ return '<button class="btn btn-ghost" onclick="location.reload()">다시 확인</button>'; },
 main: function(){
-  var t=[['license','📄','면허 검수'],['stats','📊','통계']];
+  var t=[['license','📄','면허 검수'],['inq','💬','문의함'],['stats','📊','통계']];
+  var newCnt=inqNewCount();
   return '<div style="display:flex;">'+t.map(function(x){
     var on=tab===x[0];
-    return '<div onclick="tab=\''+x[0]+'\';render()" style="flex:1;text-align:center;padding:4px 0;cursor:pointer;'
+    /* 문의함에 신규가 있으면 아이콘 위에 빨간 건수 배지 */
+    var badge=(x[0]==='inq'&&newCnt)
+      ? '<span style="position:absolute;top:-2px;left:calc(50% + 6px);background:#F04438;color:#fff;font-size:10px;font-weight:800;'
+        +'min-width:16px;height:16px;line-height:16px;border-radius:9px;padding:0 4px;box-sizing:border-box;">'+newCnt+'</span>'
+      : '';
+    return '<div onclick="tab=\''+x[0]+'\';render()" style="flex:1;position:relative;text-align:center;padding:4px 0;cursor:pointer;'
       +'color:'+(on?'var(--navy)':'#9AA4B4')+';font-weight:'+(on?'800':'600')+';">'
-      +'<div style="font-size:20px;">'+x[1]+'</div><div style="font-size:11.5px;margin-top:2px;">'+x[2]+'</div></div>';
+      +'<div style="font-size:20px;">'+x[1]+'</div><div style="font-size:11.5px;margin-top:2px;">'+x[2]+'</div>'+badge+'</div>';
   }).join('')
   +'<div onclick="goApp()" style="flex:1;text-align:center;padding:4px 0;cursor:pointer;color:#9AA4B4;font-weight:600;">'
   +'<div style="font-size:20px;">🏠</div><div style="font-size:11.5px;margin-top:2px;">앱 화면</div></div>'
@@ -318,6 +327,140 @@ function loadStats(){
   }).catch(function(){});
 }
 
+/* ═══════════ 💬 문의함 — 도우미 챗 '로디'의 문의 (rj_inquiries) ═══════════
+   · 읽기·상태변경은 관리자만. Firestore 규칙에 read/update 허용이 없으면
+     permission-denied 가 나므로, 오류로 죽이지 말고 「권한 없음」 안내를 띄운다.
+   · 원문은 콘솔에 남긴다 (원칙 C — 추측 말고 원문부터). */
+var INQ_ST = { 'new':{label:'신규',  color:'#F04438', bg:'#FEF3F2', next:'working', nextLabel:'처리중으로'},
+               working:{label:'처리중', color:'#F79009', bg:'#FFFAEB', next:'done',    nextLabel:'완료로'},
+               done:   {label:'완료',  color:'#12B76A', bg:'#ECFDF3', next:'new',     nextLabel:'신규로 되돌리기'} };
+function inqSt(q){ return INQ_ST[q.status] ? q.status : 'new'; }
+/* 받침에 맞는 조사: 신규→'로', 처리중→'으로' (ㄹ받침도 '로') */
+function josaRo(w){
+  var c=String(w||'').charCodeAt(String(w).length-1)-0xAC00;
+  if(c<0 || c>11171) return '로';
+  var jong=c%28;
+  return (jong===0 || jong===8) ? '로' : '으로';
+}
+function inqNewCount(){ return inquiries.filter(function(q){ return inqSt(q)==='new'; }).length; }
+
+function loadInquiries(){
+  var fb=window._fb;
+  inqError='';
+  return fb.getDocs(fb.collection(window._db,'rj_inquiries'))
+    .then(function(snap){
+      inquiries=[];
+      snap.forEach(function(d){ var o=d.data(); o._id=d.id; inquiries.push(o); });
+      /* 최신순 — 저장 시 넣은 date(ISO 문자열) 기준 */
+      inquiries.sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')); });
+    })
+    .catch(function(e){
+      inquiries=[];
+      inqError=(e && (e.code||e.message)) ? String(e.code||e.message) : '알 수 없는 오류';
+      console.error('문의함 읽기 실패 (rj_inquiries):', e);
+    });
+}
+function setInquiryStatus(id, status){
+  var q=inquiries.filter(function(x){ return x._id===id; })[0];
+  if(!q) return;
+  var before=q.status;
+  var fb=window._fb;
+  /* status 한 칸만 바꾼다 — 문서를 통째로 덮어쓰면 다른 필드가 날아갈 수 있다 */
+  fb.updateDoc(fb.doc(window._db,'rj_inquiries',id), { status:status })
+    .then(function(){ q.status=status; render(); toast('「'+INQ_ST[status].label+'」'+josaRo(INQ_ST[status].label)+' 바꿨습니다.'); })
+    .catch(function(e){
+      q.status=before;
+      console.error('문의 상태 변경 실패 (rj_inquiries/'+id+'):', e);
+      toast('변경 실패: '+(e && (e.code||e.message) ? (e.code||e.message) : '오류'));
+    });
+}
+function inqSetFilter(f){ inqFilter=f; render(); }
+
+function inqView(){
+  /* 규칙이 아직 안 걸린 상태 — 빈 목록으로 오해하지 않도록 이유를 그대로 알려준다 */
+  if(inqError){
+    var denied = /permission|insufficient/i.test(inqError);
+    return '<div style="background:#FEF3F2;border:1.5px solid #FECDCA;border-radius:14px;padding:18px;">'
+      +'<div style="font-size:15px;font-weight:850;color:#B42318;margin-bottom:8px;">🔒 '+(denied?'문의함을 읽을 권한이 없습니다':'문의함을 불러오지 못했습니다')+'</div>'
+      +'<div style="font-size:13px;color:#B42318;line-height:1.75;">'
+      +(denied
+         ? 'Firestore 보안 규칙에 <b>rj_inquiries 읽기 허용</b>이 아직 없습니다.<br>'
+           +'규칙을 넣기 전까지는 문의가 쌓여 있어도 여기서는 보이지 않습니다.<br>'
+           +'<span style="color:var(--ink-soft);">(문의 접수와 문자 알림은 규칙과 무관하게 그대로 동작합니다)</span>'
+         : '잠시 뒤 새로고침해 주세요.')
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid #FECDCA;border-radius:10px;padding:10px;margin-top:12px;'
+      +'font-size:12px;color:var(--ink-soft);word-break:break-all;">응답 원문: '+esc(inqError)+'</div>'
+      +'</div>';
+  }
+
+  var counts={ all:inquiries.length,
+               'new':inquiries.filter(function(q){return inqSt(q)==='new';}).length,
+               working:inquiries.filter(function(q){return inqSt(q)==='working';}).length,
+               done:inquiries.filter(function(q){return inqSt(q)==='done';}).length };
+  var tabs=[['all','전체'],['new','신규'],['working','처리중'],['done','완료']];
+  var h='<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">'
+    + tabs.map(function(f){
+        var on=inqFilter===f[0];
+        return '<button onclick="inqSetFilter(\''+f[0]+'\')" style="flex:1;min-width:70px;padding:9px 6px;border-radius:10px;cursor:pointer;'
+          +'font-size:12.5px;font-weight:800;border:1.5px solid '+(on?'var(--navy)':'var(--line)')+';'
+          +'background:'+(on?'var(--navy)':'#fff')+';color:'+(on?'#fff':'var(--ink-soft)')+';">'
+          +f[1]+' '+counts[f[0]]+'</button>';
+      }).join('')
+    +'</div>';
+
+  var newCnt=counts['new'];
+  h += '<div style="font-size:13px;font-weight:800;color:var(--ink-soft);margin-bottom:10px;">'
+    +'문의 '+inquiries.length+'건'
+    +(newCnt?' <span style="background:#F04438;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:10px;margin-left:4px;">신규 '+newCnt+'</span>':'')
+    +'</div>';
+
+  var list=inquiries.filter(function(q){ return inqFilter==='all' || inqSt(q)===inqFilter; });
+  if(!list.length){
+    return h + '<div style="text-align:center;padding:50px 20px;color:var(--ink-soft);">'
+      +'<div style="font-size:46px;">💬</div>'
+      +'<p style="font-size:15px;margin:14px 0 6px;font-weight:700;color:var(--ink);">'
+      +(inquiries.length?'해당하는 문의가 없습니다':'접수된 문의가 없습니다')+'</p>'
+      +'<p style="font-size:13.5px;">'
+      +(inquiries.length?'다른 상태를 골라보세요.':'도우미 챗에서 문의를 남기면 여기에 표시됩니다.')+'</p></div>';
+  }
+
+  h += list.map(function(q){
+    var st=inqSt(q), s=INQ_ST[st];
+    var isTest=(q.test===true);
+    return '<div class="card" style="margin-top:0;margin-bottom:12px;'
+      +(isTest?'background:#F7F8FA;border-color:#E4E8EF;':'')
+      +(st==='done'?'opacity:.62;':'')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+      +'<div style="font-size:15.5px;font-weight:800;line-height:1.4;">'
+      + esc(q.name||'(이름 없음)')
+      +' <span style="font-size:12px;font-weight:700;color:var(--ink-soft);">'+esc(q.roleText||(q.role==='company'?'업체':'기사'))+'</span>'
+      +(isTest?' <span style="font-size:11px;font-weight:800;color:#98A2B3;background:#EEF1F5;border-radius:8px;padding:3px 7px;">🧪 테스트</span>':'')
+      +'</div>'
+      +'<span style="flex:none;font-size:12px;font-weight:800;padding:5px 11px;border-radius:20px;color:'+s.color+';background:'+s.bg+';">'+s.label+'</span>'
+      +'</div>'
+      +'<div style="font-size:12.5px;color:var(--ink-soft);margin-top:5px;">'
+      + inqDate(q.date) +' · '+ esc(q.type||'사용법') +'</div>'
+      +'<div style="background:#F7F8FA;border-radius:10px;padding:12px;margin-top:10px;font-size:13.5px;'
+      +'color:var(--ink);line-height:1.7;white-space:pre-line;word-break:break-word;">'+esc(q.text||'')+'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap;">'
+      +(q.contact
+         ? '<a href="tel:'+esc(q.contact)+'" style="font-size:13px;font-weight:800;color:var(--navy);text-decoration:none;">☎ '+esc(q.contact)+'</a>'
+         : '<span style="font-size:13px;color:var(--ink-soft);">☎ 연락처 없음</span>')
+      +'<button onclick="setInquiryStatus(\''+esc(q._id)+'\',\''+s.next+'\')" '
+      +'style="flex:none;font-size:12.5px;font-weight:800;padding:8px 13px;border-radius:9px;cursor:pointer;'
+      +'border:1.5px solid var(--line);background:#fff;color:var(--navy);">→ '+s.nextLabel+'</button>'
+      +'</div></div>';
+  }).join('');
+  return h;
+}
+/* 2026-08-13T05:12:34.567Z → 2026-08-13 05:12 (저장한 ISO 문자열 그대로 읽는다) */
+function inqDate(d){
+  var s=String(d||'');
+  if(s.length<16) return s||'-';
+  return s.slice(0,10)+' '+s.slice(11,16);
+}
+
 /* ── 탈퇴했는데 면허증 사진이 남은 경우 (파기 요청) ── */
 var purges = [];
 function loadPurges(){
@@ -399,7 +542,8 @@ function boot(){
     myUid = u.uid;
     var fb=window._fb;
     fb.getDoc(fb.doc(window._db,'admins',u.uid)).then(function(s){
-      if(s.exists()){ view='main'; loadPurges().then(loadPending); }
+      /* 문의함은 실패해도 조용히 넘어간다(안에서 catch) — 면허 검수가 막히면 안 되므로 */
+      if(s.exists()){ view='main'; loadPurges().then(loadInquiries).then(loadPending); }
       else { view='noauth'; render(); }
     }).catch(function(){ view='noauth'; render(); });
   });
