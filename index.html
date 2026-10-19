@@ -18,10 +18,10 @@
 <meta property="og:url" content="https://roadjob.co.kr/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="description" content="기사와 일자리를 잇는 곳. 구인 · 구직 · 퀵을 한곳에서.">
-<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="favicon.ico?v=4" sizes="any">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" href="icon-192.png?v=3">
-<link rel="apple-touch-icon" href="icon-192.png?v=3">
+<link rel="icon" type="image/png" href="icon-192.png?v=4">
+<link rel="apple-touch-icon" href="icon-192.png?v=4">
 <title>ROADJOB 로드잡 — 기사 가입</title>
 <style>
 :root{--navy:#0F2A47;--navy-soft:#E8EEF5;--orange:#EA580C;--orange-soft:#FFF4ED;
@@ -272,7 +272,7 @@ document.dispatchEvent(new Event('fbready'));
 <script>
 // ── 앱 버전 자동 갱신 ──
 // 새 버전 배포 시: 아래 APP_VERSION 숫자를 +1, version.json의 version도 같은 숫자로 올림
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 (function checkAppVersion(){
   try{
     fetch('version.json?t=' + Date.now(), {cache:'no-store'})
